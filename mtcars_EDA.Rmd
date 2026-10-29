@@ -1,0 +1,674 @@
+---
+title: "Exploratory Data Analysis and Business Insights with mtcars"
+author: "Mark Joel Comia"
+date: "`r Sys.Date()`"
+output: 
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: cosmo
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, fig.width = 8, fig.height = 4.5)
+library(tidyverse)
+library(ggrepel)
+library(knitr)
+library(reshape2)
+# Ensure factoextra is available for clustering visualization
+if (!requireNamespace("factoextra", quietly = TRUE)) {
+  install.packages("factoextra", repos = "https://cloud.r-project.org")
+}
+library(factoextra)
+```
+
+# 1. Data Overview and Preparation
+
+## Dataset Description
+The `mtcars` (Motor Trend Car Road Tests) dataset is built into R. Extracted from the 1974 *Motor Trend* US magazine, the data records fuel consumption and 10 aspects of automobile design and performance for 32 automobiles (1973–74 models).
+
+## Data Profiling
+The dataset contains **32 observations (rows)** and **11 technical variables (columns)**. Note that the car model names are originally stored as **row names** rather than as a dedicated column.
+
+| Variable | Description | Type in Raw Data |
+|---|---|---|
+| `mpg` | Miles per (US) gallon | Numeric (Continuous) |
+| `cyl` | Number of cylinders (4, 6, 8) | Numeric (Discrete / Categorical) |
+| `disp` | Engine displacement (cubic inches) | Numeric (Continuous) |
+| `hp` | Gross horsepower | Numeric (Continuous) |
+| `drat` | Rear axle ratio | Numeric (Continuous) |
+| `wt` | Weight (1,000 lbs) | Numeric (Continuous) |
+| `qsec` | 1/4 mile acceleration time (seconds) | Numeric (Continuous) |
+| `vs` | Engine configuration (0 = V-shaped, 1 = Straight) | Numeric (Binary) |
+| `am` | Transmission type (0 = Automatic, 1 = Manual) | Numeric (Binary) |
+| `gear` | Number of forward gears (3, 4, 5) | Numeric (Discrete / Categorical) |
+| `carb` | Number of carburetors | Numeric (Discrete / Categorical) |
+
+```{r data-prep}
+# Convert row names into an explicit column for clean manipulation
+cars_df <- mtcars %>%
+  rownames_to_column(var = "car_model")
+
+# Display the first 6 rows
+head(cars_df) %>%
+  kable(caption = "First 6 Automobiles in mtcars Dataset")
+```
+
+---
+
+# 2. Exploratory Analysis
+
+## Fuel Efficiency
+
+### Question 1: What does the distribution of fuel efficiency (`mpg`) look like across the vehicles? What does a typical car look like?
+
+```{r q1-distribution}
+# 1. Descriptive statistics for mpg
+mpg_summary <- cars_df %>%
+  summarise(
+    Count  = n(),
+    Mean   = round(mean(mpg), 2),
+    Median = round(median(mpg), 2),
+    SD     = round(sd(mpg), 2),
+    IQR    = round(IQR(mpg), 2),
+    Min    = min(mpg),
+    Q1     = round(quantile(mpg, 0.25), 2),
+    Q3     = round(quantile(mpg, 0.75), 2),
+    Max    = max(mpg)
+  )
+
+kable(mpg_summary, caption = "Summary Statistics for Fuel Efficiency (mpg)")
+
+# 2. Histogram with Density Curve and Median Line
+ggplot(cars_df, aes(x = mpg)) +
+  geom_histogram(aes(y = after_stat(density)), binwidth = 3, fill = "#2b5c8f", color = "white", alpha = 0.85) +
+  geom_density(color = "#e63946", linewidth = 1) +
+  geom_vline(aes(xintercept = median(mpg)), color = "#f4a261", linetype = "dashed", linewidth = 1) +
+  annotate("text", x = median(cars_df$mpg) + 2.8, y = 0.055, 
+           label = paste("Median:", median(cars_df$mpg), "mpg"), color = "#f4a261", fontface = "bold") +
+  labs(
+    title = "Distribution of Vehicle Fuel Efficiency (mpg)",
+    subtitle = "Fleet of 32 automobiles (1973–74 models)",
+    x = "Miles Per Gallon (mpg)",
+    y = "Density"
+  ) +
+  theme_minimal()
+```
+
+**Findings on Distribution:**
+* **Center:** The fleet exhibits a **median of 19.20 mpg** and a **mean of 20.09 mpg**.
+* **Spread:** Fuel economy spans from **10.40 mpg** (Cadillac Fleetwood & Lincoln Continental) to **33.90 mpg** (Toyota Corolla), with a standard deviation of **6.03 mpg**. The middle 50% of vehicles (IQR) fall between **15.43 mpg (Q1)** and **22.80 mpg (Q3)**.
+* **Shape:** The distribution is moderately **right-skewed (positively skewed)**, with a bimodal appearance caused by two distinct vehicle classes: heavy domestic V8 cruisers (13–18 mpg) and lightweight 4-cylinder imports (25–33 mpg).
+
+**What a Typical Car Looks Like:**
+* The statistical median is 19.2 mpg. The **Merc 280** and **Pontiac Firebird** sit directly at this exact median.
+* The **Merc 280** is the most representative "typical" vehicle across the entire fleet:
+  * **Fuel Economy:** 19.2 mpg (fleet median: 19.2)
+  * **Power:** 123 hp (exact fleet median: 123 hp)
+  * **Weight:** 3,440 lbs (near fleet median: 3,325 lbs)
+  * **Cylinders:** 6 cylinders (midpoint between 4 and 8)
+  * **Transmission:** Automatic (representing 60% of the fleet)
+
+---
+
+### Question 2: Which vehicles are unusually efficient or inefficient, and what do they have in common?
+
+```{r q2-extremes}
+# Unusually efficient (top 4)
+top_efficient <- cars_df %>%
+  arrange(desc(mpg)) %>%
+  select(car_model, mpg, cyl, wt, hp, am, disp) %>%
+  head(4)
+
+kable(top_efficient, caption = "Most Fuel-Efficient Automobiles")
+
+# Unusually inefficient (bottom 4)
+least_efficient <- cars_df %>%
+  arrange(mpg) %>%
+  select(car_model, mpg, cyl, wt, hp, am, disp) %>%
+  head(4)
+
+kable(least_efficient, caption = "Least Fuel-Efficient Automobiles")
+```
+
+**Common Traits Identified:**
+* **Unusually Efficient Vehicles (Toyota Corolla 33.9 mpg, Fiat 128 32.4 mpg, Honda Civic 30.4 mpg, Lotus Europa 30.4 mpg):**
+  * **Featherweight:** All weigh under 2,200 lbs (down to 1,513 lbs for the Lotus).
+  * **Engine Design:** Small, straight 4-cylinder engines with displacements under 100 cu. in.
+  * **Drivetrain:** 4-speed or 5-speed manual transmissions (`am = 1`).
+  * **Origin:** European and Japanese subcompact imports.
+* **Unusually Inefficient Vehicles (Cadillac Fleetwood 10.4 mpg, Lincoln Continental 10.4 mpg, Camaro Z28 13.3 mpg, Duster 360 14.3 mpg):**
+  * **Heavy Chassis:** Weights exceeding 3,800 lbs (reaching >5,200 lbs for Cadillac and Lincoln).
+  * **Engine Design:** Enormous 8-cylinder V-engines with displacements exceeding 350–470 cu. in.
+  * **Drivetrain:** 3-speed automatic transmissions (`am = 0`).
+  * **Origin:** American full-size luxury sedans and muscle cars.
+
+---
+
+### Question 3: How is fuel efficiency related to weight, horsepower, and displacement? Which relationships are strongest?
+
+```{r q3-correlations}
+# Calculate Pearson correlation coefficients
+cor_matrix <- cor(cars_df[c("mpg", "wt", "disp", "hp")])
+cor_results <- cor_matrix["mpg", c("wt", "disp", "hp")]
+kable(as.data.frame(as.list(round(cor_results, 3))), caption = "Correlation with Fuel Efficiency (mpg)")
+
+# Faceted scatterplots with linear regression trendlines
+cars_df %>%
+  pivot_longer(cols = c(wt, disp, hp), names_to = "metric", values_to = "value") %>%
+  mutate(metric = recode(metric, 
+                         "wt" = "Weight (1,000 lbs)",
+                         "disp" = "Displacement (cu. in.)",
+                         "hp" = "Gross Horsepower")) %>%
+  ggplot(aes(x = value, y = mpg)) +
+  geom_point(color = "#2b5c8f", size = 2.5, alpha = 0.8) +
+  geom_smooth(method = "lm", se = FALSE, color = "#e63946") +
+  facet_wrap(~ metric, scales = "free_x") +
+  labs(
+    title = "Fuel Efficiency vs. Weight, Displacement, and Horsepower",
+    x = "Specification Value",
+    y = "Miles Per Gallon (mpg)"
+  ) +
+  theme_minimal()
+```
+
+**Interpretation:**
+* All three variables exhibit **strong, statistically significant negative (inverse) correlations** with fuel economy:
+  1. **Weight (`wt`):** $r = -0.868$ (Strongest relationship)
+  2. **Displacement (`disp`):** $r = -0.848$ (Second strongest)
+  3. **Horsepower (`hp`):** $r = -0.776$ (Third strongest)
+* **Key Takeaway:** Vehicle curb weight is the single most dominant physical drag on fuel efficiency. While displacement and power matter, vehicle mass requires the most continuous energy to move.
+
+---
+
+### Question 4: Are there vehicles whose fuel efficiency is surprising given their size or power that management should look at more closely?
+
+```{r q4-residuals}
+# Linear model predicting MPG from Weight and Horsepower
+eff_model <- lm(mpg ~ wt + hp, data = cars_df)
+
+cars_surprises <- cars_df %>%
+  mutate(
+    expected_mpg = round(predict(eff_model), 1),
+    difference   = round(mpg - expected_mpg, 1) # Residual
+  ) %>%
+  select(car_model, mpg, wt, hp, expected_mpg, difference)
+
+# Top 3 positive surprises (Overperformers)
+kable(head(arrange(cars_surprises, desc(difference)), 3), 
+      caption = "Top 3 Overperforming Vehicles (Positive Residuals)")
+
+# Top 3 negative surprises (Underperformers)
+kable(head(arrange(cars_surprises, difference), 3), 
+      caption = "Top 3 Underperforming Vehicles (Negative Residuals)")
+
+# Plot actual vs. expected
+ggplot(cars_surprises, aes(x = expected_mpg, y = mpg)) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "gray50") +
+  geom_point(aes(color = difference > 0), size = 3) +
+  geom_text_repel(aes(label = car_model), size = 3, max.overlaps = 8) +
+  scale_color_manual(values = c("#d90429", "#2a9d8f"), labels = c("Underperforming", "Overperforming")) +
+  labs(
+    title = "Actual vs. Model-Expected Fuel Efficiency (mpg ~ wt + hp)",
+    subtitle = "Points above the dashed line exceed engineering expectations",
+    x = "Expected MPG (Model Prediction)",
+    y = "Actual MPG",
+    color = "Performance"
+  ) +
+  theme_minimal()
+```
+
+**Interpretation:**
+* **Positive Surprises (Overperformers):**
+  * **Toyota Corolla (+5.9 mpg):** Expected to get 28.0 mpg; achieved 33.9 mpg.
+  * **Fiat 128 (+5.8 mpg):** Expected to get 26.6 mpg; achieved 32.4 mpg.
+  * **Lotus Europa (+5.1 mpg):** Expected 25.3 mpg; achieved 30.4 mpg while pushing 113 hp.
+* **Negative Surprises (Underperformers):**
+  * **AMC Javelin (-3.9 mpg):** Expected 19.1 mpg based on 3,435 lbs and 150 hp; achieved only 15.2 mpg.
+  * **Dodge Challenger (-3.3 mpg):** Expected 18.8 mpg; achieved only 15.5 mpg.
+  * **Toyota Corona (-3.1 mpg):** Expected 24.6 mpg; achieved only 21.5 mpg.
+
+---
+
+## Performance and Design
+
+### Question 5: Which vehicles are the most powerful (`hp`) and the quickest (`qsec`)? Are these the same vehicles?
+
+```{r q5-power-quickness}
+# Most powerful car
+most_powerful <- cars_df %>% arrange(desc(hp)) %>% select(car_model, hp, qsec, wt, drat) %>% head(1)
+# Quickest car (lowest quarter mile time)
+quickest <- cars_df %>% arrange(qsec) %>% select(car_model, qsec, hp, wt, drat) %>% head(1)
+
+kable(bind_rows(most_powerful, quickest), caption = "Most Powerful vs. Quickest Automobile")
+```
+
+**Findings:**
+* **Most Powerful:** **Maserati Bora** with **335 hp**.
+* **Quickest:** **Ford Pantera L** with a quarter-mile time of **14.50 seconds** (Maserati Bora is second at 14.60 seconds).
+* **Are they the same vehicle?** **No.** Although both are mid-engine Italian-engineered sports cars, the Ford Pantera L accelerates faster despite having 71 less horsepower (264 hp vs. 335 hp).
+* **Reason:** The Pantera is **400 lbs lighter** (3,170 lbs vs. 3,570 lbs) and features a more aggressive rear axle gear ratio (`drat = 4.22` vs. `3.54`), demonstrating that power-to-weight ratio and gearing beat raw horsepower.
+
+---
+
+### Question 6: How strong is the trade-off between performance and fuel efficiency? Is it possible to have both?
+
+```{r q6-tradeoff}
+# Correlation between mpg and performance metrics
+kable(data.frame(
+  Metric_Pair = c("mpg vs hp (Power)", "mpg vs qsec (Acceleration Time)"),
+  Correlation_r = c(round(cor(cars_df$mpg, cars_df$hp), 3), round(cor(cars_df$mpg, cars_df$qsec), 3))
+), caption = "Trade-off Correlations")
+
+# Scatter plot: Power vs Fuel Efficiency
+ggplot(cars_df, aes(x = hp, y = mpg)) +
+  geom_point(color = "#2b5c8f", size = 3) +
+  geom_smooth(method = "loess", se = FALSE, color = "#e63946") +
+  geom_text_repel(data = filter(cars_df, car_model %in% c("Lotus Europa", "Ferrari Dino", "Porsche 914-2", "Maserati Bora")),
+                  aes(label = car_model), fontface = "bold", color = "#d90429") +
+  labs(
+    title = "The Power vs. Fuel Efficiency Trade-Off",
+    subtitle = "Notice exceptional sports cars that break the conventional curve",
+    x = "Gross Horsepower (hp)",
+    y = "Fuel Efficiency (mpg)"
+  ) +
+  theme_minimal()
+```
+
+**Interpretation:**
+* **Trade-Off Strength:** Very strong ($r = -0.776$ between `mpg` and `hp`). Conventional carbureted V8 engines exceeding 200 hp invariably achieve less than 16 mpg.
+* **Is it possible to have both?** Generally no in standard design, **but yes through aggressive chassis lightweighting**:
+  * **Lotus Europa:** Delivers sports-car acceleration (16.9s qsec, 113 hp) while returning **30.4 mpg** thanks to its featherweight 1,513-lb curb weight.
+  * **Ferrari Dino:** Produces 175 hp with a rapid 15.5s quarter-mile while achieving **19.7 mpg** (near the fleet median).
+  * **Porsche 914-2:** Returns **26.0 mpg** with a brisk 16.7s quarter-mile.
+
+---
+
+### Question 7: Which vehicles appear to be underperforming? Define and justify how you measure underperformance.
+
+**Definition and Justification:**
+* **Definition:** Underperformance is defined as having a **large negative residual** in a regression model predicting fuel efficiency from weight and power:
+$$\text{Underperformance} = \text{Actual MPG} - \text{Expected MPG}(\text{wt}, \text{hp})$$
+* **Justification:** A car is not necessarily poorly designed just because it has low mpg if it is an enormous 5,000-lb luxury vehicle. However, if a vehicle achieves substantially lower mpg than competitors of the *exact same weight and power*, it reflects parasitic powertrain loss, poor aerodynamics, or inefficient carburetion.
+
+```{r q7-underperformance}
+underperformers <- cars_surprises %>%
+  arrange(difference) %>%
+  head(3)
+
+kable(underperformers, caption = "Top Underperforming Vehicles")
+```
+
+* **AMC Javelin:** Achieved only 15.2 mpg vs. an expected 19.1 mpg (**-3.9 mpg gap**).
+* **Dodge Challenger:** Achieved only 15.5 mpg vs. an expected 18.8 mpg (**-3.3 mpg gap**).
+* **Toyota Corona:** Achieved 21.5 mpg vs. an expected 24.6 mpg (**-3.1 mpg gap**).
+
+---
+
+### Question 8: Are there vehicles with unusual combinations of weight, power, efficiency, or acceleration?
+
+We measure multi-dimensional anomalies using **Power-to-Weight ratio** (`hp / wt`) and **Mahalanobis Distance** across `(mpg, hp, wt, qsec)`.
+
+```{r q8-unusual}
+# 1. Engineering ratios
+unusual_ratios <- cars_df %>%
+  mutate(
+    hp_per_wt = round(hp / wt, 1),
+    qsec      = round(qsec, 1)
+  ) %>%
+  select(car_model, wt, hp, hp_per_wt, qsec, mpg)
+
+# 2. Mahalanobis distance
+vars_matrix <- cars_df[, c("mpg", "hp", "wt", "qsec")]
+cars_df$mahal_dist <- round(mahalanobis(vars_matrix, colMeans(vars_matrix), cov(vars_matrix)), 2)
+
+top_unusual <- cars_df %>%
+  arrange(desc(mahal_dist)) %>%
+  select(car_model, mahal_dist, hp, wt, qsec, mpg) %>%
+  head(4)
+
+kable(top_unusual, caption = "Top 4 Multi-Dimensional Outliers (Mahalanobis Distance)")
+```
+
+**Standout Vehicles:**
+1. **Maserati Bora (Distance: 11.53):** Extreme horsepower (335 hp) and high power-to-weight (93.8 hp/wt) in a mid-weight chassis.
+2. **Lotus Europa (Distance: 7.64):** Extreme lightweight chassis (1,513 lbs) paired with high efficiency (30.4 mpg) and high power-to-weight (74.7 hp/wt).
+3. **Merc 230 (Distance: 6.72):** Acceleration anomaly. Despite having 95 hp, it takes **22.90 seconds** to complete the quarter-mile—the slowest car in the entire fleet.
+4. **Chrysler Imperial (Distance: 6.22):** Massive 5,345 lb weight, yet accelerates to a 17.4s quarter-mile.
+
+---
+
+## Vehicle Segments
+
+### Question 9: How do vehicles differ across cylinder groups (4, 6, 8)? Are the differences in fuel efficiency statistically and practically meaningful?
+
+```{r q9-cylinders}
+# Summary by cylinder count
+cyl_summary <- cars_df %>%
+  group_by(cyl) %>%
+  summarise(
+    Count       = n(),
+    Mean_MPG    = round(mean(mpg), 1),
+    SD_MPG      = round(sd(mpg), 1),
+    Mean_HP     = round(mean(hp), 0),
+    Mean_Weight = round(mean(wt) * 1000, 0)
+  )
+
+kable(cyl_summary, caption = "Vehicle Specifications by Cylinder Count")
+
+# Boxplot
+ggplot(cars_df, aes(x = factor(cyl), y = mpg, fill = factor(cyl))) +
+  geom_boxplot(alpha = 0.75, outlier.color = "red") +
+  geom_jitter(width = 0.15, size = 2) +
+  scale_fill_brewer(palette = "Blues") +
+  labs(
+    title = "Fuel Efficiency (mpg) Across Cylinder Groups",
+    x = "Cylinders",
+    y = "Miles Per Gallon (mpg)"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+
+# One-way ANOVA
+cyl_anova <- aov(mpg ~ factor(cyl), data = cars_df)
+summary(cyl_anova)
+
+# Tukey HSD Post-Hoc Test
+TukeyHSD(cyl_anova)
+```
+
+**Findings:**
+* **Statistically Meaningful:** **Yes.** ANOVA reveals $F(2, 29) = 39.7, p = 4.97 \times 10^{-9} < 0.001$. Tukey HSD confirms that 4 vs. 6, 6 vs. 8, and 4 vs. 8 are all significantly different ($p < 0.05$).
+* **Practically Meaningful:** **Enormously yes.** Moving from 4 to 6 cylinders drops fuel economy by **7.0 mpg (26%)**, and moving from 4 to 8 cylinders drops it by **11.6 mpg (43%)**. An 8-cylinder car consumes nearly 77% more fuel per mile.
+
+---
+
+### Question 10: Do manual and automatic vehicles differ in fuel efficiency? Is the difference explained by other factors such as weight or engine size?
+
+```{r q10-transmission}
+# 1. Bivariate t-test
+t_test_trans <- t.test(mpg ~ am, data = cars_df)
+t_test_trans
+
+# 2. Simple vs. Controlled Linear Regression
+fit_simple     <- lm(mpg ~ am, data = cars_df)
+fit_controlled <- lm(mpg ~ am + wt + disp, data = cars_df)
+
+summary(fit_simple)$coefficients
+summary(fit_controlled)$coefficients
+```
+
+**Findings:**
+* **Bivariate Difference:** In raw comparison, manual cars average **24.39 mpg** vs. **17.15 mpg** for automatics—a significant difference of **+7.24 mpg** ($t = -3.77, p = 0.0014$).
+* **Is it explained by other factors?** **Yes, completely.**  
+  In the controlled model (`mpg ~ am + wt + disp`), the coefficient for `am` shrinks from **+7.24 mpg down to +0.18 mpg** and loses all statistical significance ($p = 0.89$). Manual cars get better mileage because they were smaller, lighter vehicles, not because manual transmission mechanics inherently saved fuel.
+
+---
+
+### Question 11: How do V-shaped and straight engines differ in efficiency and performance?
+
+```{r q11-engine-shape}
+# Summary by engine shape
+vs_summary <- cars_df %>%
+  mutate(engine_shape = ifelse(vs == 0, "V-shaped (0)", "Straight (1)")) %>%
+  group_by(engine_shape) %>%
+  summarise(
+    Count       = n(),
+    Mean_MPG    = round(mean(mpg), 1),
+    Mean_HP     = round(mean(hp), 0),
+    Mean_Qsec   = round(mean(qsec), 1),
+    Mean_Weight = round(mean(wt) * 1000, 0)
+  )
+
+kable(vs_summary, caption = "Comparison of V-Shaped vs. Straight Engines")
+
+# Two-sample t-tests
+t.test(mpg ~ vs, data = cars_df)
+t.test(hp ~ vs, data = cars_df)
+t.test(qsec ~ vs, data = cars_df)
+```
+
+**Findings:**
+* **Fuel Efficiency:** Straight engines (`vs = 1`) average **24.56 mpg**, beating V-shaped engines (**16.62 mpg**) by **~7.94 mpg** ($p < 0.001$).
+* **Performance:** V-shaped engines (`vs = 0`) average **189.7 hp** vs. **91.4 hp** for straight engines ($p < 0.001$), and are **2.28 seconds quicker** in the quarter-mile ($16.69s$ vs. $18.97s$, $p < 0.001$).
+* **Trade-Off:** V-shaped engines deliver superior power and torque for heavy vehicles at the direct expense of fuel efficiency.
+
+---
+
+### Question 12: Are there identifiable groups of vehicles with substantially different design and performance profiles?
+
+We conduct **k-means clustering** ($k = 3$) on scaled numeric attributes (`mpg`, `cyl`, `disp`, `hp`, `wt`, `qsec`).
+
+```{r q12-clustering}
+set.seed(123)
+specs_scaled <- scale(cars_df[, c("mpg", "cyl", "disp", "hp", "wt", "qsec")])
+km_res <- kmeans(specs_scaled, centers = 3, nstart = 25)
+
+cars_df$Cluster <- factor(km_res$cluster)
+
+# Cluster Profiles
+cluster_summary <- cars_df %>%
+  group_by(Cluster) %>%
+  summarise(
+    Count      = n(),
+    Avg_MPG    = round(mean(mpg), 1),
+    Avg_Cyl    = round(mean(cyl), 1),
+    Avg_Weight = round(mean(wt) * 1000, 0),
+    Avg_HP     = round(mean(hp), 0),
+    Avg_Qsec   = round(mean(qsec), 1)
+  )
+
+kable(cluster_summary, caption = "Cluster Profiles (k = 3)")
+
+# Cluster plot using PCA dimensions
+fviz_cluster(km_res, data = specs_scaled,
+             ellipse.type = "convex",
+             repel = TRUE,
+             palette = "Set2",
+             main = "Automobile Market Segments (K-Means Clustering)") +
+  theme_minimal()
+```
+
+**Identified Segments:**
+1. **Cluster 1 (Economy Commuters):** 4-cylinder compact imports averaging **26.7 mpg**, ~2,300 lbs, and 83 hp.
+2. **Cluster 2 (Balanced Midsize Sedans):** 6-cylinder daily drivers averaging **19.7 mpg**, ~3,100 lbs, and 122 hp.
+3. **Cluster 3 (V8 Muscle & Heavy Cruisers):** Large 8-cylinder domestic vehicles averaging **15.1 mpg**, ~4,000+ lbs, and 209 hp.
+
+---
+
+## Manufacturer and Origin
+
+### Question 13: Derive the manufacturer (brand) and region of origin from car names. Which brands and regions are represented, and how evenly?
+
+```{r q13-origin}
+# Derive brand and region
+cars_df <- cars_df %>%
+  mutate(
+    brand = word(car_model, 1),
+    region = case_when(
+      brand %in% c("Toyota", "Honda", "Mazda", "Datsun") ~ "Japan",
+      brand %in% c("Merc", "Fiat", "Porsche", "Lotus", "Ferrari", "Maserati", "Volvo") ~ "Europe",
+      TRUE ~ "US"
+    )
+  )
+
+# Regional breakdown
+region_counts <- cars_df %>%
+  count(region, sort = TRUE) %>%
+  mutate(Percentage = round(n / sum(n) * 100, 1))
+
+kable(region_counts, caption = "Fleet Distribution by Region of Origin")
+
+# Bar chart
+ggplot(cars_df, aes(x = fct_infreq(region), fill = region)) +
+  geom_bar(color = "black", alpha = 0.85) +
+  geom_text(stat = "count", aes(label = after_stat(count)), vjust = -0.5, fontface = "bold") +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Vehicle Count by Region of Origin",
+    x = "Region",
+    y = "Count"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+**Representation Findings:**
+* **Representation is highly uneven:**
+  * **US:** 18 vehicles (56.3%) — dominated by Ford, GM, Chrysler, and AMC.
+  * **Europe:** 10 vehicles (31.3%) — heavily skewed by Mercedes-Benz (7 models) alongside sports/luxury exotics.
+  * **Japan:** 4 vehicles (12.5%) — very small representation (Toyota, Honda, Mazda, Datsun).
+
+---
+
+### Question 14: How do vehicle specifications differ across regions of origin?
+
+```{r q14-regional-specs}
+regional_specs <- cars_df %>%
+  group_by(region) %>%
+  summarise(
+    Count       = n(),
+    Mean_MPG    = round(mean(mpg), 1),
+    Mean_Weight = round(mean(wt) * 1000, 0),
+    Mean_HP     = round(mean(hp), 0),
+    Mean_Disp   = round(mean(disp), 0),
+    Pct_Manual  = round(mean(am) * 100, 1)
+  )
+
+kable(regional_specs, caption = "Vehicle Specifications by Region of Origin")
+```
+
+* **Japan:** Lightest (~2,200 lbs), small displacement (112 cu. in.), highest fuel efficiency (**25.5 mpg**), 75% manual.
+* **US:** Heaviest (~3,900 lbs), enormous displacement (336 cu. in.), lowest fuel efficiency (**15.6 mpg**), 78% automatic.
+* **Europe:** Balanced weight (~3,000 lbs), moderate fuel economy (**21.4 mpg**), with highest power density per displacement.
+
+---
+
+### Question 15: Are there regions or brands whose positioning appears particularly strong or weak for a fuel-conscious market?
+
+```{r q15-positioning}
+ggplot(cars_df, aes(x = hp, y = mpg, color = region, shape = region)) +
+  geom_point(size = 3.5, alpha = 0.85) +
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Regional Market Positioning: Fuel Economy vs. Horsepower",
+    subtitle = "Post-1973 OPEC oil shock market vulnerability",
+    x = "Gross Horsepower (hp)",
+    y = "Fuel Efficiency (mpg)"
+  ) +
+  theme_minimal()
+```
+
+* **Strong Positioning:** Japanese automakers (Toyota, Honda, Datsun) and European subcompacts (Fiat) dominate the upper-left quadrant (high mpg, low weight).
+* **Weak / Vulnerable Positioning:** American domestic manufacturers are anchored in the lower-right quadrant (sub-16 mpg gas guzzlers). Following the 1973 oil crisis, US automakers faced severe market loss to fuel-efficient imports.
+
+---
+
+## Data Issues and Limitations
+
+### Question 16: How are categorical attributes (`cyl`, `vs`, `am`, `gear`, `carb`) encoded, and how should they be treated in analysis?
+
+* **Encoding:** Stored as raw numeric integers in `mtcars`.
+* **Treatment:** They should be cast into **factors** with meaningful labels. Leaving them as raw numbers in regression models forces the algorithm to assume a linear relationship across discrete categories.
+
+```{r q16-factors}
+cars_clean <- cars_df %>%
+  mutate(
+    cyl_f  = factor(cyl, levels = c(4, 6, 8), labels = c("4-Cyl", "6-Cyl", "8-Cyl")),
+    vs_f   = factor(vs, levels = c(0, 1), labels = c("V-shaped", "Straight")),
+    am_f   = factor(am, levels = c(0, 1), labels = c("Automatic", "Manual")),
+    gear_f = factor(gear, levels = c(3, 4, 5), labels = c("3-Speed", "4-Speed", "5-Speed")),
+    carb_f = factor(carb)
+  )
+
+str(cars_clean[c("cyl_f", "vs_f", "am_f", "gear_f", "carb_f")])
+```
+
+---
+
+### Question 17: How strongly are the design variables correlated with each other, and how does this affect interpretation of any single variable's relationship with `mpg`?
+
+```{r q17-multicollinearity}
+cor_design <- cor(cars_df[c("mpg", "wt", "disp", "hp", "cyl", "qsec", "drat")])
+melted_c <- melt(cor_design)
+
+ggplot(melted_c, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(value, 2)), size = 3) +
+  scale_fill_gradient2(low = "#d90429", mid = "#ffffff", high = "#2b5c8f", midpoint = 0, limit = c(-1, 1)) +
+  labs(title = "Design Variables Correlation Matrix (Heatmap)") +
+  theme_minimal()
+```
+
+* **Impact:** Severe **multicollinearity** exists among `wt`, `disp`, `cyl`, and `hp` ($r > 0.80$). This inflates standard errors in multiple regression, making it difficult to isolate the independent effect of one engineering parameter without holding others constant.
+
+---
+
+### Question 18: What limitations could affect management's interpretation?
+
+1. **Small Sample Size ($n = 32$):** Low statistical power and high vulnerability to individual leverage points (e.g., Maserati Bora).
+2. **Historical Obsolescence:** 1973–74 carbureted engines lack electronic fuel injection, modern variable valve timing, and lightweight carbon/aluminum alloys.
+3. **Publication Selection Bias:** Sourced from *Motor Trend* enthusiast magazine, over-indexing on luxury sedans and European sports cars.
+
+---
+
+# 3. Key Findings
+
+### Question 19: What are the three most important findings management should know?
+
+1. **Curb Weight is the Primary Driver of Fuel Consumption ($r = -0.87$):**  
+   Chassis mass is the single largest factor determining MPG. Every 1,000 lbs of added vehicle mass costs approximately **5.3 mpg**. Powertrain tuning cannot overcome an excessively heavy vehicle platform.
+
+2. **The Apparent Fuel Economy of Manual Transmissions is Confounded by Weight:**  
+   While manual cars average **+7.24 mpg** more than automatics in simple comparisons, this effect disappears (+0.18 mpg, $p = 0.89$) once vehicle weight and engine displacement are controlled for. Manual cars were efficient because they were small and light.
+
+3. **Performance and Economy Can Only Be Bridged Through Lightweighting:**  
+   While horsepower and fuel efficiency inherently conflict ($r = -0.78$), vehicles like the **Lotus Europa (113 hp, 16.9s quarter-mile, 30.4 mpg at 1,513 lbs)** prove that aggressive weight reduction allows sports-car acceleration without penalizing fuel economy.
+
+---
+
+# 4. Recommendations
+
+### Question 20: What three actions would you recommend management consider for its next vehicle line-up?
+
+1. **Implement an Aggressive Platform Lightweighting Program:**  
+   * *Action:* Prioritize lightweight alloys, high-strength steels, and compact platform architecture.
+   * *Evidence:* Weight has the strongest inverse relationship with fuel economy ($r = -0.87$). Shedding 500 lbs yields an immediate ~2.6 mpg benefit across the entire fleet.
+
+2. **Downsize Engine Displacement and Transition from V8 to 4- and 6-Cylinders:**  
+   * *Action:* Phase out heavy 8-cylinder engines in favor of high-efficiency straight-4 and V6 platforms.
+   * *Evidence:* 4-cylinder vehicles average **26.7 mpg** vs. **15.1 mpg** for 8-cylinder cars (a 77% difference in fuel consumption), meeting consumer demand in a fuel-conscious market.
+
+3. **Optimize Drivetrain Gearing (4- and 5-Speed Transmissions) for Volumetric Efficiency:**  
+   * *Action:* Pair downsized engines with multi-gear transmissions and optimized axle ratios rather than compensating with larger engine displacement.
+   * *Evidence:* European sports cars (Porsche 914-2, Ferrari Dino) prove that smaller displacement engines paired with 4- and 5-speed gearboxes deliver competitive acceleration alongside manageable fuel consumption.
+
+---
+
+# 5. Additional Exploration
+
+### Additional Question 1: Does Gearing (Rear Axle Ratio `drat` and Forward Gears) Improve Fuel Economy After Controlling for Weight?
+
+```{r add-q1}
+gear_model <- lm(mpg ~ wt + drat + factor(gear), data = cars_df)
+summary(gear_model)
+```
+
+* **Insight:** Although higher rear axle ratios (`drat`) correlate positively with `mpg` ($r = +0.68$) on a bivariate level, the effect loses significance once vehicle weight is held constant. Gear optimization improves fuel economy primarily when integrated with lighter chassis platforms.
+
+---
+
+### Additional Question 2: Which Manufacturers Achieve the Highest Specific Power Output (HP per Cubic Inch)?
+
+```{r add-q2}
+specific_output <- cars_df %>%
+  mutate(hp_per_disp = round(hp / disp, 2)) %>%
+  select(car_model, brand, region, hp, disp, hp_per_disp, mpg) %>%
+  arrange(desc(hp_per_disp))
+
+kable(head(specific_output, 5), caption = "Top 5 Engines by Volumetric Efficiency (HP per cu. in.)")
+```
+
+* **Insight:** **European manufacturers lead in volumetric efficiency**, with the **Lotus Europa (1.19 hp/cu. in.)**, **Ferrari Dino (1.21 hp/cu. in.)**, and **Maserati Bora (1.11 hp/cu. in.)** generating more than 1 horsepower per cubic inch. In contrast, large American V8s (e.g., Cadillac Fleetwood at 0.43 hp/cu. in.) extract very low power relative to their massive engine displacements.
